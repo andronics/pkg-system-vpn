@@ -1,0 +1,483 @@
+#!/usr/bin/env zsh
+# VPN CLI - NordVPN control interface
+# Uses _vpn v2.0 extension library
+
+# Exit on errors
+set -e
+
+# Get script name
+readonly SCRIPT_NAME="$(basename "$0")"
+
+# ------------------------------------------------------------------------------
+# Dependencies
+# ------------------------------------------------------------------------------
+
+# Load VPN library
+if ! source "$(command -v _vpn)" 2>/dev/null; then
+    echo "ERROR: _vpn extension library not found" >&2
+    echo "Please ensure /home/andronics/.dotfiles/lib is in PATH" >&2
+    exit 1
+fi
+
+# _vpn already loads: _common, _jq, _systemd, _log (and optionally _events, _cache, _http, etc.)
+
+# ------------------------------------------------------------------------------
+# Main Dispatcher
+# ------------------------------------------------------------------------------
+
+vpn_main() {
+    # Require at least one argument
+    if [[ $# -eq 0 ]]; then
+        vpn_usage
+        return 1
+    fi
+
+    local command="$1"
+    shift 2>/dev/null || true
+
+    # Dispatch to appropriate library function
+    case "${command}" in
+        # Service management
+        service)
+            case "${1:-}" in
+                start)
+                    vpn-service-start
+                    ;;
+                stop)
+                    vpn-service-stop
+                    ;;
+                restart)
+                    vpn-service-restart
+                    ;;
+                enable)
+                    vpn-service-enable
+                    ;;
+                disable)
+                    vpn-service-disable
+                    ;;
+                status)
+                    vpn-service-status
+                    ;;
+                *)
+                    echo "ERROR: Unknown service command '${1:-}'" >&2
+                    echo "Valid: start, stop, restart, enable, disable, status" >&2
+                    return 1
+                    ;;
+            esac
+            ;;
+
+        # Service commands (direct)
+        service-start)
+            vpn-service-start "$@"
+            ;;
+        service-stop)
+            vpn-service-stop "$@"
+            ;;
+        service-restart)
+            vpn-service-restart "$@"
+            ;;
+        service-enable)
+            vpn-service-enable "$@"
+            ;;
+        service-disable)
+            vpn-service-disable "$@"
+            ;;
+        service-status)
+            vpn-service-status "$@"
+            ;;
+
+        # Connection commands
+        connect)
+            vpn-connect "$@"
+            ;;
+        disconnect)
+            vpn-disconnect "$@"
+            ;;
+        reconnect)
+            vpn-reconnect "$@"
+            ;;
+
+        # Status commands
+        status)
+            vpn-status "$@"
+            ;;
+        is-connected)
+            vpn-is-connected "$@"
+            ;;
+
+        # Info/metadata commands
+        info)
+            vpn_show_info
+            ;;
+        ip)
+            vpn-meta-ip "$@"
+            ;;
+        country)
+            vpn-meta-country "$@"
+            ;;
+        city)
+            vpn-meta-city "$@"
+            ;;
+        server)
+            vpn-meta-server "$@"
+            ;;
+
+        # Metadata commands (with prefix)
+        meta)
+            case "${1:-}" in
+                ip)
+                    vpn-meta-ip
+                    ;;
+                country)
+                    vpn-meta-country
+                    ;;
+                city)
+                    vpn-meta-city
+                    ;;
+                server)
+                    vpn-meta-server
+                    ;;
+                status)
+                    vpn-meta-status
+                    ;;
+                protocol)
+                    vpn-meta-protocol
+                    ;;
+                technology)
+                    vpn-meta-technology
+                    ;;
+                uptime)
+                    vpn-meta-uptime
+                    ;;
+                bytes-sent)
+                    vpn-meta-bytes-sent
+                    ;;
+                bytes-received)
+                    vpn-meta-bytes-received
+                    ;;
+                *)
+                    echo "ERROR: Unknown meta command '${1:-}'" >&2
+                    echo "Valid: ip, country, city, server, status, protocol, technology, uptime, bytes-sent, bytes-received" >&2
+                    return 1
+                    ;;
+            esac
+            ;;
+
+        # Direct metadata commands
+        meta-ip)
+            vpn-meta-ip "$@"
+            ;;
+        meta-country)
+            vpn-meta-country "$@"
+            ;;
+        meta-city)
+            vpn-meta-city "$@"
+            ;;
+        meta-server)
+            vpn-meta-server "$@"
+            ;;
+        meta-status)
+            vpn-meta-status "$@"
+            ;;
+        meta-status-icon)
+            # Get status and look up icon (using old state logic)
+            local status=$(vpn-meta-status)
+            # This will need custom handling or we could enhance the library
+            echo "${status}"
+            ;;
+        meta-protocol)
+            vpn-meta-protocol "$@"
+            ;;
+        meta-technology)
+            vpn-meta-technology "$@"
+            ;;
+        meta-uptime)
+            vpn-meta-uptime "$@"
+            ;;
+        meta-bytes-sent)
+            vpn-meta-bytes-sent "$@"
+            ;;
+        meta-bytes-received)
+            vpn-meta-bytes-received "$@"
+            ;;
+
+        # List commands
+        list-countries | countries)
+            vpn-list-countries "$@"
+            ;;
+        list-cities | cities)
+            vpn-list-cities "$@"
+            ;;
+        list-hostnames | hostnames | servers)
+            vpn-list-hostnames "$@"
+            ;;
+        list-groups | groups)
+            vpn-list-groups "$@"
+            ;;
+        list-technologies | technologies)
+            vpn-list-technologies "$@"
+            ;;
+        list-services | services)
+            vpn-list-services "$@"
+            ;;
+
+        # Settings commands
+        settings)
+            vpn-get-settings "$@"
+            ;;
+
+        # Authentication commands
+        login)
+            vpn-login "$@"
+            ;;
+        logout)
+            vpn-logout "$@"
+            ;;
+
+        # Mesh commands
+        mesh)
+            case "${1:-}" in
+                enable)
+                    vpn-mesh-enable
+                    ;;
+                disable)
+                    vpn-mesh-disable
+                    ;;
+                peer)
+                    shift
+                    case "${1:-}" in
+                        list)
+                            vpn-mesh-peer-list
+                            ;;
+                        add)
+                            shift
+                            vpn-mesh-peer-add "$@"
+                            ;;
+                        remove)
+                            shift
+                            vpn-mesh-peer-remove "$@"
+                            ;;
+                        refresh)
+                            vpn-mesh-peer-refresh
+                            ;;
+                        *)
+                            echo "ERROR: Unknown mesh peer command '${1:-}'" >&2
+                            echo "Valid: list, add, remove, refresh" >&2
+                            return 1
+                            ;;
+                    esac
+                    ;;
+                *)
+                    echo "ERROR: Unknown mesh command '${1:-}'" >&2
+                    echo "Valid: enable, disable, peer" >&2
+                    return 1
+                    ;;
+            esac
+            ;;
+
+        # Direct mesh commands (backward compatibility)
+        mesh-enable)
+            vpn-mesh-enable "$@"
+            ;;
+        mesh-disable)
+            vpn-mesh-disable "$@"
+            ;;
+        mesh-set)
+            # Legacy command - map to enable
+            vpn-mesh-enable "$@"
+            ;;
+        peer-list)
+            vpn-mesh-peer-list "$@"
+            ;;
+        peer-add)
+            vpn-mesh-peer-add "$@"
+            ;;
+        peer-remove)
+            vpn-mesh-peer-remove "$@"
+            ;;
+        peer-refresh)
+            vpn-mesh-peer-refresh "$@"
+            ;;
+
+        # State commands (backward compatibility)
+        state-connect)
+            # Legacy command - use interactive connect
+            vpn-connect-interactive "$@"
+            ;;
+        state-disconnect)
+            vpn-disconnect "$@"
+            ;;
+        state-name)
+            vpn-meta-status "$@"
+            ;;
+        state-icon)
+            vpn-meta-status "$@"
+            ;;
+
+        # Help and info
+        help|--help|-h)
+            vpn_usage
+            ;;
+        version|--version|-v)
+            echo "vpn CLI v2.0.0 (using _vpn library v${VPN_VERSION:-2.0.0})"
+            ;;
+        self-test)
+            vpn-self-test "$@"
+            ;;
+
+        # Unknown command
+        *)
+            echo "ERROR: Unknown command '${command}'" >&2
+            echo "Run 'vpn help' for usage information" >&2
+            return 1
+            ;;
+    esac
+}
+
+# ------------------------------------------------------------------------------
+# Info Display
+# ------------------------------------------------------------------------------
+
+vpn_show_info() {
+    echo "VPN Connection Information"
+    echo "=========================="
+    echo ""
+
+    if vpn-is-connected 2>/dev/null; then
+        echo "Status:      Connected"
+        echo "Country:     $(vpn-meta-country 2>/dev/null || echo 'N/A')"
+        echo "City:        $(vpn-meta-city 2>/dev/null || echo 'N/A')"
+        echo "Server:      $(vpn-meta-server 2>/dev/null || echo 'N/A')"
+        echo "IP:          $(vpn-meta-ip 2>/dev/null || echo 'N/A')"
+        echo "Technology:  $(vpn-meta-technology 2>/dev/null || echo 'N/A')"
+        echo "Protocol:    $(vpn-meta-protocol 2>/dev/null || echo 'N/A')"
+        echo "Uptime:      $(vpn-meta-uptime 2>/dev/null || echo 'N/A')"
+        echo "Sent:        $(vpn-meta-bytes-sent 2>/dev/null || echo 'N/A')"
+        echo "Received:    $(vpn-meta-bytes-received 2>/dev/null || echo 'N/A')"
+    else
+        echo "Status:      Disconnected"
+    fi
+    echo ""
+}
+
+# ------------------------------------------------------------------------------
+# Usage Information
+# ------------------------------------------------------------------------------
+
+vpn_usage() {
+    cat <<'EOF'
+VPN CLI - NordVPN control interface
+
+USAGE:
+    vpn <command> [arguments]
+
+COMMANDS:
+    Service Management:
+        service start            Start nordvpnd service
+        service stop             Stop nordvpnd service
+        service restart          Restart nordvpnd service
+        service enable           Enable autostart
+        service disable          Disable autostart
+        service status           Show service status
+
+    Connection Control:
+        connect [location]       Connect to VPN (optionally specify location)
+        disconnect               Disconnect from VPN
+        reconnect                Reconnect to VPN
+
+    Connection Status:
+        status                   Show connection status
+        is-connected             Check if connected (exit 0=yes, 1=no)
+        info                     Show detailed connection information
+
+    Connection Metadata:
+        ip                       Get VPN IP address
+        country                  Get connected country
+        city                     Get connected city
+        server                   Get connected server hostname
+
+    Server Data:
+        countries                List available countries
+        cities [country]         List available cities
+        servers                  List server hostnames
+        groups                   List server groups
+        technologies             List available technologies
+        services                 List available services
+
+    Settings:
+        settings                 Show current settings
+
+    Authentication:
+        login [user] [pass]      Login to NordVPN account
+        logout                   Logout from NordVPN account
+
+    Mesh Networking:
+        mesh enable              Enable mesh networking
+        mesh disable             Disable mesh networking
+        mesh peer list           List mesh peers
+        mesh peer add <host> [ip] Add mesh peer
+        mesh peer remove <host>  Remove mesh peer
+        mesh peer refresh        Refresh peer list
+
+    Utility:
+        help                     Show this help message
+        version                  Show version information
+        self-test                Run self-diagnostic tests
+
+EXAMPLES:
+    # Basic connection
+    vpn connect
+    vpn disconnect
+
+    # Connect to specific location
+    vpn connect "United States"
+    vpn connect "New York"
+
+    # Check status
+    vpn status
+    vpn is-connected && echo "Connected"
+
+    # Get information
+    vpn info
+    vpn country
+    vpn ip
+
+    # Manage service
+    vpn service start
+    vpn service status
+
+    # List locations
+    vpn countries
+    vpn cities "United States"
+
+    # Mesh networking
+    vpn mesh peer add server1.local 192.168.1.100
+    vpn mesh peer list
+
+CONFIGURATION:
+    The VPN utility uses the NordVPN CLI and requires:
+    - nordvpn CLI installed and in PATH
+    - nordvpnd service running
+
+    Authentication:
+    - Login with: vpn login
+    - Or use nordvpn CLI directly: nordvpn login
+
+LIBRARY FUNCTIONS:
+    This utility uses the _vpn extension library which provides 70+
+    functions for VPN management. See the library documentation:
+    /home/andronics/.dotfiles/lib/.local/docs/lib/_vpn.md
+
+SEE ALSO:
+    - Library Documentation: ~/.dotfiles/lib/.local/docs/lib/_vpn.md
+    - NordVPN CLI: nordvpn --help
+    - Migration Report: ~/.dotfiles/vpn/.migration-report.md
+
+EOF
+}
+
+# ------------------------------------------------------------------------------
+# Execute
+# ------------------------------------------------------------------------------
+
+vpn_main "$@"
